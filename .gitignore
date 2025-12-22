@@ -1,0 +1,44 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+*.log
+*.sqlite3
+.env
+.env.*
+venv/
+.venv/
+
+# Backend specifics
+backend/venv/
+backend/__pycache__/
+backend/.env
+
+# Node / Next.js
+node_modules/
+frontend/node_modules/
+.next/
+frontend/.next/
+frontend/.turbo/
+frontend/.vercel/
+frontend/.env
+frontend/.env.*
+frontend/.swc/
+out/
+dist/
+build/
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor
+.idea/
+.vscode/
+*.swp
+
