@@ -13,6 +13,7 @@ from services.sea.msc import drive_msc
 from services.sea.hapag import drive_hapag
 from services.sea.cma import drive_cma
 from services.sea.hmm import drive_hmm
+from services.sea.evergreen import drive_evergreen
 
 app = FastAPI(title="MP Cargo V2.0")
 
@@ -99,6 +100,8 @@ async def track_sea(request: TrackRequest):
         scrape_data = await drive_cma(request.number)
     elif "hmm" in carrier_name or "hyundai" in carrier_name:
         scrape_data = await drive_hmm(request.number)
+    elif "evergreen" in carrier_name or "ever" in carrier_name:
+        scrape_data = await drive_evergreen(request.number)
 
     # ---------------------------------------------------------
     # AI PARSING & RESPONSE
