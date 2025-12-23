@@ -4,7 +4,7 @@ from services.utils import STEALTH_ARGS, human_type, kill_cookie_banners
 
 async def drive_hmm(container_number: str):
     """
-    Official HMM (Hyundai) Driver - V2 (Corrected Flow)
+    Official HMM (Hyundai) Driver - Testing Version
     Follows user-specified sequence: Menu -> Radio -> Input -> Search
     """
     print(f"🚢 [HMM] Official Site Tracking: {container_number}")
@@ -17,7 +17,7 @@ async def drive_hmm(container_number: str):
         page = await context.new_page()
 
         try:
-            # Go to the HMM site - use networkidle instead of load for better reliability
+            # Go to the HMM site
             print("   -> Navigating to HMM website...")
             await page.goto("https://www.hmm21.com/company.do", wait_until="domcontentloaded", timeout=90000)
             # Wait a bit for any dynamic content
@@ -28,10 +28,6 @@ async def drive_hmm(container_number: str):
 
             # 2. CLICK THE "Track & Trace" MENU TAB
             print("   -> 1. Scrolling down and clicking 'Track & Trace' tab...")
-            # The page has TWO sections in the same form:
-            # - <div class="schedule"> (visible by default)
-            # - <div class="tracktace"> (hidden, contains container input)
-            # Clicking the tab toggles their visibility via JavaScript
             
             # Just scroll down to where the tabs are (about 600px down)
             await page.mouse.wheel(0, 600)
@@ -57,7 +53,6 @@ async def drive_hmm(container_number: str):
 
             # 3. CLICK THE "Container No." RADIO LABEL
             print("   -> 2. Selecting 'Container No.' radio button...")
-            # Using the exact label selector you provided
             container_label = page.locator("label[for='radio-id4']")
             await container_label.wait_for(state="visible")
             await container_label.click()
@@ -71,8 +66,6 @@ async def drive_hmm(container_number: str):
 
             # 5. CLICK SEARCH (the one inside .tracktace section)
             print("   -> 4. Clicking Search...")
-            # There are TWO buttons with class="retreve" - one in schedule, one in tracktace
-            # We need the one inside .tracktace that calls gotoTrkNTrc()
             search_button = page.locator("div.tracktace button.retreve")
             await search_button.click()
 
