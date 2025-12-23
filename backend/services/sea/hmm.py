@@ -10,7 +10,6 @@ async def drive_hmm(container_number: str):
     print(f"🚢 [HMM] Official Site Tracking: {container_number}")
 
     async with async_playwright() as p:
-        # Launch Headless=True for Production (Railway)
         browser = await p.chromium.launch(headless=True, args=STEALTH_ARGS)
         context = await browser.new_context()
         page = await context.new_page()
@@ -22,16 +21,13 @@ async def drive_hmm(container_number: str):
             await kill_cookie_banners(page)
 
             # 2. Click "Track & Trace" Tab
-            # Based on screenshot, it's likely a text link or tab header
             print("   -> Clicking 'Track & Trace' tab...")
             await page.click("text=Track & Trace")
-
-            # Small pause for tab animation
             await asyncio.sleep(1)
 
             # 3. Select "Container No." Radio Button
             print("   -> Selecting 'Container No.'...")
-            # We click the label because clicking the hidden radio input might fail
+            # Use label click to ensure radio is selected
             await page.click("label[for='radio-id4']")
 
             # 4. Input
@@ -41,25 +37,33 @@ async def drive_hmm(container_number: str):
             await page.click(input_selector)
             await human_type(page, input_selector, container_number)
 
-            # 5. Click Search
+            # 5. Click Search (and wait for navigation/load)
             print("   -> Clicking Search...")
-            # The button class from your HTML
+
+            # HMM often opens the result in the SAME container but refreshes the DOM
+            # We wait for a specific element that only appears AFTER search
             await page.click("button.retreve")
 
-            # 6. Wait for Results
-            print("   -> Waiting for results...")
+            # 6. WAIT FOR RESULTS (The Critical Fix)
+            print("   -> Waiting for results table...")
 
-            # HMM Search usually opens a popup or redirects.
-            # If it redirects in the same tab:
             try:
-                await page.wait_for_load_state("networkidle")
-                # Wait for a table or specific result container
-                await page.wait_for_selector("table, .contents, .result", timeout=20000)
-            except:
-                print("   ⚠️ Wait timeout. Grabbing whatever is on screen.")
+                # Wait for "Tracking Result" text or the specific result table class
+                # Based on your raw text: "Tracking Result" is a header
+                await page.wait_for_selector("text=Tracking Result", timeout=25000)
 
-            # 7. Extract Data
-            content = await page.inner_text("body")
+                # Wait a bit more for the rows to populate
+                await asyncio.sleep(2)
+
+                # Extract the specific container holding the data
+                # This avoids grabbing the menu/footer noise
+                # Try to target the main content area
+                content = await page.inner_text(".contents, #contents, body")
+
+            except:
+                print("   ⚠️ specific selector timeout. Waiting for network idle...")
+                await page.wait_for_load_state("networkidle")
+                content = await page.inner_text("body")
 
             await browser.close()
 
