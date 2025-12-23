@@ -10,7 +10,9 @@ async def drive_hmm(container_number: str):
     print(f"🚢 [HMM] Official Site Tracking: {container_number}")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=STEALTH_ARGS)
+        # Add --disable-http2 to prevent ERR_HTTP2_PROTOCOL_ERROR on HMM site
+        custom_args = STEALTH_ARGS + ["--disable-http2"]
+        browser = await p.chromium.launch(headless=True, args=custom_args)
         context = await browser.new_context(ignore_https_errors=True)
         page = await context.new_page()
 
