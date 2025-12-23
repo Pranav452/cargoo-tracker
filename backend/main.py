@@ -157,10 +157,16 @@ async def track_sea(request: TrackRequest):
         }
 
     # If API failed AND Driver failed/doesn't exist
+    # Provide helpful message based on carrier
+    if "cma" in carrier_name:
+        message = "CMA CGM container not found in API. Browser automation blocked by WAF. Please check manually at: https://www.cma-cgm.com/ebusiness/tracking"
+    else:
+        message = "Container not found in API, and no Official Driver available."
+    
     return {
         "source": "System",
-        "status": "Not Found",
+        "status": "Manual Check Required" if "cma" in carrier_name else "Not Found",
         "co2": "N/A",
         "eta_changed": False,
-        "message": "Container not found in API, and no Official Driver available."
+        "message": message
     }
