@@ -17,8 +17,11 @@ async def drive_hmm(container_number: str):
         page = await context.new_page()
 
         try:
-            # Go to a neutral page first, not the direct tracking URL
-            await page.goto("https://www.hmm21.com/company.do", timeout=60000)
+            # Go to the HMM site - use networkidle instead of load for better reliability
+            print("   -> Navigating to HMM website...")
+            await page.goto("https://www.hmm21.com/company.do", wait_until="domcontentloaded", timeout=90000)
+            # Wait a bit for any dynamic content
+            await asyncio.sleep(2)
 
             # 1. Kill Cookies
             await kill_cookie_banners(page)
