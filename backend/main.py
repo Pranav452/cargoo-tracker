@@ -8,6 +8,7 @@ from services.ai_service import parse_tracking_data # <--- THE BRAIN
 from services.sea.msc import drive_msc
 from services.sea.hapag import drive_hapag
 from services.sea.cma import drive_cma
+from services.sea.hmm import drive_hmm  # <--- NEW IMPORT
 from services.sea.fallback import drive_sea_fallback
 
 app = FastAPI(title="MP Cargo V2.0")
@@ -57,6 +58,8 @@ async def track_sea(request: TrackRequest):
         scrape_data = await drive_hapag(request.number)
     elif "cma" in carrier_name:
         scrape_data = await drive_cma(request.number)
+    elif "hmm" in carrier_name or "hyundai" in carrier_name:  # <--- HMM ROUTE
+        scrape_data = await drive_hmm(request.number)
     
     # ---------------------------------------------------------
     # TIER 3: Universal Fallback (If Tier 2 failed or no driver)
