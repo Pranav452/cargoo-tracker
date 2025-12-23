@@ -16,6 +16,7 @@ interface Shipment {
   summary?: string;
   loading?: boolean;
   selected?: boolean;
+  type?: string;
   raw?: any;
 }
 
@@ -29,18 +30,44 @@ export default function Dashboard() {
     if (!e.target.files?.[0]) return;
     const data = await parseExcel(e.target.files[0]);
 
+    // Map Excel rows to our App Structure
     const mapped = data.map((row: any, index: number) => {
       const norm = normalizeKeys(row);
+
+      // --- CLEAN CARRIER NAMES ---
+      let carrier = String(norm.carrier || "Unknown").toUpperCase();
+
+      if (carrier.includes('HAPAG')) carrier = 'HAPAG-LLOYD';
+      else if (carrier.includes('CMA')) carrier = 'CMA CGM';
+      else if (carrier.includes('ONE')) carrier = 'ONE';
+      else if (carrier.includes('MSC')) carrier = 'MSC';
+      else if (carrier.includes('HYUNDAI') || carrier.includes('HMM')) carrier = 'HMM';
+      else if (carrier.includes('MAERSK')) carrier = 'MAERSK';
+      else if (carrier.includes('COSCO')) carrier = 'COSCO';
+      else if (carrier.includes('EVERGREEN')) carrier = 'EVERGREEN';
+
+      // --- CLEAN CONTAINER NUMBER ---
+      // Remove spaces or invisible characters
+      const rawTracking = String(norm.trackingNumber || "").trim();
+
+      // Guess type based on number format
+      // Air = 3 digits - 8 digits (e.g., 098-12345678)
+      // Sea = 4 letters + 7 numbers (e.g., MSCU1234567)
+      const isAir = rawTracking.includes("-") || (rawTracking.length === 11 && !isNaN(Number(rawTracking)));
+
       return {
         id: index,
-        trackingNumber: norm.trackingNumber || "",
-        carrier: norm.carrier || "Unknown",
-        systemEta: norm.systemEta || "-",
-        selected: true, // Auto-select all
+        trackingNumber: rawTracking,
+        carrier: carrier,
+        systemEta: norm.systemEta || "N/A",
+        type: isAir ? "air" : "sea",
         loading: false,
+        selected: true,
         raw: row
-      };
-    }).filter(s => s.trackingNumber); // Filter empty
+      } as Shipment;
+    })
+    // FILTER: Only keep rows that actually have a Container/AWB Number
+    .filter(s => s.trackingNumber && s.trackingNumber.length > 5 && s.trackingNumber !== "UNKNOWN");
 
     setShipments(mapped);
   };
