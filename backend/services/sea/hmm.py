@@ -5,13 +5,18 @@ from services.utils import STEALTH_ARGS, human_type, kill_cookie_banners
 async def drive_hmm(container_number: str):
     """
     Official HMM (Hyundai) Driver
-    URL: https://www.hmm21.com/company.do
+    Fixed: Handles HTTP2 Protocol Errors.
     """
     print(f"🚢 [HMM] Official Site Tracking: {container_number}")
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=STEALTH_ARGS)
-        context = await browser.new_context()
+        # Add --disable-http2 to args to prevent the protocol error
+        custom_args = STEALTH_ARGS + ["--disable-http2"]
+
+        browser = await p.chromium.launch(headless=True, args=custom_args)
+
+        # Ignore HTTPS errors to be safe
+        context = await browser.new_context(ignore_https_errors=True)
         page = await context.new_page()
 
         try:
