@@ -10,7 +10,7 @@ async def drive_msc(container_number: str):
     print(f"🚢 [MSC] Official Site Tracking: {container_number}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False, args=STEALTH_ARGS)
+        browser = await p.chromium.launch(headless=True, args=STEALTH_ARGS)
         context = await browser.new_context()
         page = await context.new_page()
 

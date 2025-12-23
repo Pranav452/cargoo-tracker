@@ -1,6 +1,18 @@
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
+// NEW: Helper to convert Excel Serial Date to String
+const excelDateToJSDate = (serial: any) => {
+   if (!serial || isNaN(serial)) return serial; // Return original if not a number
+   // Excel base date logic
+   const utc_days  = Math.floor(serial - 25569);
+   const utc_value = utc_days * 86400;
+   const date_info = new Date(utc_value * 1000);
+
+   // Format as DD/MM/YYYY
+   return date_info.toLocaleDateString('en-GB');
+}
+
 // --- PARSING ---
 export const parseExcel = (file: File): Promise<any[]> => {
   return new Promise((resolve, reject) => {
@@ -60,7 +72,10 @@ export const normalizeKeys = (row: any) => {
     // Smart Column Mapping based on your team's file
     if (lower.includes('container no') || lower === 'container') newRow.trackingNumber = row[key];
     else if (lower.includes('shipping line') || lower === 'carrier') newRow.carrier = row[key];
-    else if (lower === 'eta') newRow.systemEta = row[key]; // Strict 'eta' to avoid 'actual eta' confusion
+    else if (lower === 'eta') {
+        // APPLY DATE FIX HERE
+        newRow.systemEta = excelDateToJSDate(row[key]);
+    }
     else newRow[key] = row[key]; // Keep extra columns
   });
 

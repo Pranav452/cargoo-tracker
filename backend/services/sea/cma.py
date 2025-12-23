@@ -11,7 +11,7 @@ async def drive_cma(container_number: str):
     print(f"🚢 [CMA] Routing via ParcelsApp (Bypassing WAF): {container_number}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False, args=STEALTH_ARGS)
+        browser = await p.chromium.launch(headless=True, args=STEALTH_ARGS)
         context = await browser.new_context()
         page = await context.new_page()
 
