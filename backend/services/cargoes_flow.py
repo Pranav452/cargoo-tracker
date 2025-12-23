@@ -2,6 +2,7 @@ import os
 import httpx
 import json
 from dotenv import load_dotenv
+from services.date_utils import standardize_date
 
 # Load environment variables
 load_dotenv()
@@ -57,7 +58,10 @@ async def get_sea_shipment(container_number: str):
 
                     # 2. Arrival Date (ETA)
                     # We check 'destinationOceanPortEta' first, then 'promisedEta'
-                    eta = shipment.get("destinationOceanPortEta") or shipment.get("promisedEta") or "N/A"
+                    raw_eta = shipment.get("destinationOceanPortEta") or shipment.get("promisedEta") or "N/A"
+                    
+                    # Standardize the ETA to DD/MM/YYYY format
+                    eta = standardize_date(raw_eta)
 
                     # 3. Status Summary
                     # We construct a raw summary for the AI to polish later

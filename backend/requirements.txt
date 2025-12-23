@@ -6,3 +6,4 @@ playwright
 openai
 pandas
 beautifulsoup4
+python-dateutil

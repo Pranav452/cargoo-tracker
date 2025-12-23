@@ -14,6 +14,8 @@ interface Shipment {
   liveEta?: string;
   status?: string;
   summary?: string;
+  co2?: string;
+  etaChanged?: boolean;
   loading?: boolean;
   selected?: boolean;
   type?: string;
@@ -115,7 +117,8 @@ export default function Dashboard() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             number: shipments[i].trackingNumber,
-            carrier: shipments[i].carrier
+            carrier: shipments[i].carrier,
+            system_eta: shipments[i].systemEta
           })
         });
 
@@ -129,7 +132,9 @@ export default function Dashboard() {
             loading: false,
             liveEta: data.live_eta || "N/A",
             status: data.status || "Error",
-            summary: data.smart_summary || data.message || "No data"
+            summary: data.smart_summary || data.message || "No data",
+            co2: data.co2 || "N/A",
+            etaChanged: data.eta_changed || false
           };
           return newArr;
         });
@@ -157,9 +162,10 @@ export default function Dashboard() {
       "Carrier": s.carrier,
       "System ETA": s.systemEta,
       "Live ETA": s.liveEta,
+      "CO2 Emissions": s.co2,
       "Status": s.status,
       "Summary": s.summary,
-      "ETA Changed": s.liveEta !== s.systemEta ? "YES" : "NO"
+      "ETA Changed": s.etaChanged ? "YES" : "NO"
     }));
     exportData(exportDataList, format);
   };
@@ -290,6 +296,7 @@ export default function Dashboard() {
                       <th className="px-4 py-4 w-32">System ETA</th>
                       <th className="px-4 py-4 w-40">Live Status</th>
                       <th className="px-4 py-4 w-32">Live ETA</th>
+                      <th className="px-4 py-4 w-28">CO2</th>
                       <th className="px-4 py-4">Smart Summary</th>
                       <th className="px-4 py-4 w-10"></th>
                     </tr>
@@ -337,12 +344,17 @@ export default function Dashboard() {
                         </td>
 
                         {/* Live ETA */}
-                        <td className={`px-4 py-3 font-medium ${item.liveEta !== "N/A" && item.liveEta !== item.systemEta ? "text-red-600" : "text-slate-700"}`}>
+                        <td className={`px-4 py-3 font-medium ${item.etaChanged ? "text-red-600" : "text-slate-700"}`}>
                           {item.liveEta || "-"}
                         </td>
 
+                        {/* CO2 Emissions */}
+                        <td className="px-4 py-3 text-slate-600 text-sm">
+                          {item.co2 || "-"}
+                        </td>
+
                         {/* Summary */}
-                        <td className="px-4 py-3 text-slate-600 max-w-md truncate" title={item.summary}>
+                        <td className="px-4 py-3 text-slate-600 max-w-lg truncate" title={item.summary}>
                           {item.summary || "-"}
                         </td>
 
