@@ -3,6 +3,7 @@ uvicorn
 python-dotenv
 httpx
 playwright
+playwright-stealth
 openai
 pandas
 beautifulsoup4
