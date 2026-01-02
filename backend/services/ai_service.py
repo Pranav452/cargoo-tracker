@@ -8,41 +8,45 @@ load_dotenv()
 
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# --- TEXT PARSING SYSTEM PROMPT ---
-# Note: We use unique placeholders to avoid conflicts
+# --- STRICT PROMPT FOR ETA ACCURACY ---
+# Uses {{CURRENT_DATE}} to determine Past vs Future
 SYSTEM_PROMPT = """
-You are an expert Logistics Operations Assistant for MP Cargo.
-Extract critical tracking details from raw website text or API JSON and generate CLIENT-READY summaries.
+You are a Logistics Coordinator.
+Your goal is to extract the **ESTIMATED ARRIVAL DATE (ETA)** at the **FINAL DESTINATION**.
 
-CURRENT DATE CONTEXT: {{CURRENT_DATE}}
-- Use this to interpret if events are in the past, present, or future.
+CURRENT DATE: {{CURRENT_DATE}}
 
-SYSTEM ETA: {{SYSTEM_ETA}}
-LIVE ETA: {{LIVE_ETA}}
-HOLIDAYS BETWEEN DATES: {{HOLIDAYS}}
+RULES FOR "latest_date" (THE LIVE ETA):
+1. **PRIORITY 1 (Destination Arrival - HIGHEST):** Look for dates in the "Destination" column or row, NOT "Discharging Port".
+   - If you see both "Discharging Port" and "Destination" dates at the same location, **ALWAYS PICK THE DESTINATION DATE** (it's usually later).
+   - Example: If "Discharging Port: Antwerp - Arrival: 09-Jan-2026" and "Destination: Antwerp - Arrival: 10-Jan-2026", **YOU MUST PICK 10-Jan-2026**.
+   - Look for labels like "Destination", "Final Destination", "Final Arrival", or "Destination Arrival".
 
-RULES:
-1. "latest_date": Extract the MOST RECENT event date (Format: DD/MM/YYYY with time if available as HH:MM).
-2. "status": 
-   - "Delivered": If explicit delivered status found.
-   - "Arrived at Destination": If status shows arrival at final port/airport.
-   - "In Transit": If moving between locations.
-   - "Booked": If created but not moved.
-   - "Exception": If holds/customs issues.
-3. "co2": Extract CO2 emissions if mentioned (with unit, e.g., "3536 kg"). Use "N/A" if not found.
-4. "summary": CRITICAL - Create a CLIENT-READY, professional summary that:
-   - If ETA has changed: EXPLAIN WHY the ETA changed based on tracking events (delays, holds, route changes, weather, customs, etc.)
-   - State the delay duration clearly (e.g., "delayed by 3 days" or "advanced by 2 days")
-   - Mention relevant public holidays between old and new ETA that may impact operations (from HOLIDAYS field above)
-   - Use professional, clear language suitable for direct client communication
-   - Keep it concise but informative (2-3 sentences maximum)
-   - If ETA unchanged: Simple status update is sufficient
+2. **PRIORITY 2 (Future Arrival at Final Port):** If no explicit "Destination" date exists, look for dates labeled "ETA", "Arrival", "Berthing", or "ETB" at the FINAL DESTINATION port.
+   - If you see "Departure: 12-Dec" and "Arrival: 17-Jan", **YOU MUST PICK 17-Jan**.
+   - Even if the date is in the future (2026), USE IT.
+   
+3. **PRIORITY 3 (Past Arrival):** If the shipment has already arrived, use the "Arrival" or "Discharge" date at destination.
+
+4. **PRIORITY 4 (In Transit - No ETA):** Only if NO arrival date is mentioned, use the last "Departure" date.
+
+5. **CRITICAL:** Never use "Discharging Port" date if a "Destination" date exists. The Destination date is the TRUE final arrival.
+
+6. **FORMAT:** Convert to **DD-MMM-YYYY** (e.g., 17-Jan-2026). Do NOT use ISO format.
+
+RULES FOR "status":
+- **"In Transit"**: If the extracted ETA is in the **FUTURE** relative to {{CURRENT_DATE}}.
+- **"Arrived"**: If the extracted ETA is in the **PAST** and text confirms arrival.
+- **"Booked"**: If no movement events exist yet.
+
+RULES FOR "summary":
+- Explicitly mention the Destination and the Date.
+- Example: "In transit to Antwerp. Expected Arrival: 17-Jan-2026."
 
 JSON STRUCTURE:
 {
   "latest_date": "string",
   "status": "string",
-  "co2": "string",
   "summary": "string"
 }
 """
@@ -60,9 +64,9 @@ async def parse_tracking_data(
     Args:
         raw_text: Raw tracking data from website/API
         carrier: Carrier name
-        system_eta: Original system ETA for comparison
-        live_eta: Current live ETA
-        holidays_info: Formatted holiday information between dates
+        system_eta: Original system ETA for comparison (kept for backward compatibility)
+        live_eta: Current live ETA (kept for backward compatibility)
+        holidays_info: Formatted holiday information between dates (kept for backward compatibility)
     
     Returns:
         Dict with latest_date, status, co2, and summary
@@ -77,26 +81,21 @@ async def parse_tracking_data(
              }
 
         # CALCULATE TODAY'S DATE
-        today = datetime.now().strftime("%d/%m/%Y")
-
-        # Replace all placeholders
+        today = datetime.now().strftime("%d-%b-%Y")
         final_prompt = SYSTEM_PROMPT.replace("{{CURRENT_DATE}}", today)
-        final_prompt = final_prompt.replace("{{SYSTEM_ETA}}", system_eta)
-        final_prompt = final_prompt.replace("{{LIVE_ETA}}", live_eta)
-        final_prompt = final_prompt.replace("{{HOLIDAYS}}", holidays_info)
 
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": final_prompt},
-                {"role": "user", "content": f"Carrier: {carrier}\n\nRaw Data:\n{raw_text[:3500]}"}
+                {"role": "user", "content": f"Carrier: {carrier}\n\nRaw Data:\n{raw_text[:4000]}"}
             ],
             response_format={"type": "json_object"},
             temperature=0
         )
         result = json.loads(response.choices[0].message.content)
         
-        # Ensure co2 field exists
+        # Ensure co2 field exists for backward compatibility
         if "co2" not in result:
             result["co2"] = "N/A"
         

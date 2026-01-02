@@ -4,11 +4,13 @@ from services.utils import STEALTH_ARGS, human_type, kill_cookie_banners
 
 async def drive_hmm(container_number: str):
     """
-    Official HMM (Hyundai) Driver - Testing Version
-    Follows user-specified sequence: Menu -> Radio -> Input -> Search
+    Official HMM Driver (Server-Ready)
+    - Headless: TRUE (Required for EC2/Railway)
+    - Protocol: HTTP/1.1 Forced (Prevents blocking)
+    - Logic: JS-based clicking for reliability
     """
     print(f"🚢 [HMM] Official Site Tracking: {container_number}")
-
+    
     async with async_playwright() as p:
         # Add --disable-http2 to prevent ERR_HTTP2_PROTOCOL_ERROR on HMM site
         custom_args = STEALTH_ARGS + ["--disable-http2"]
@@ -17,78 +19,98 @@ async def drive_hmm(container_number: str):
         page = await context.new_page()
 
         try:
-            # Go to the HMM site
-            print("   -> Navigating to HMM website...")
-            await page.goto("https://www.hmm21.com/company.do", wait_until="domcontentloaded", timeout=90000)
-            # Wait a bit for any dynamic content
-            await asyncio.sleep(2)
+            print("   -> Navigating to HMM...")
+            await page.goto("https://www.hmm21.com/company.do", timeout=90000, wait_until="domcontentloaded")
+            await asyncio.sleep(3) # Let assets load
 
-            # 1. Kill Cookies
+            # 3. Handle Cookies
             await kill_cookie_banners(page)
 
-            # 2. CLICK THE "Track & Trace" MENU TAB
-            print("   -> 1. Scrolling down and clicking 'Track & Trace' tab...")
-            
-            # Just scroll down to where the tabs are (about 600px down)
-            await page.mouse.wheel(0, 600)
-            await asyncio.sleep(1)
-            
-            # Now click the second li in any visible div.tabs that has "Track & Trace"
-            # Use JavaScript to be more reliable
-            await page.evaluate("""
-                const tabs = document.querySelectorAll('div.tabs ul li');
-                for (let tab of tabs) {
-                    if (tab.textContent.includes('Track & Trace')) {
-                        tab.click();
-                        break;
-                    }
+            # 4. Click 'Track & Trace' Tab (Using JS Injection)
+            # This is more reliable than selectors because layout shifts don't break it
+            print("   -> Switching to Track & Trace Tab...")
+            found_tab = await page.evaluate("""() => {
+                const tabs = Array.from(document.querySelectorAll('li, div, a, span'));
+                const target = tabs.find(el => el.textContent.trim() === 'Track & Trace');
+                if (target) {
+                    target.click();
+                    return true;
                 }
-            """)
-            print("      -> Clicked 'Track & Trace' tab.")
+                return false;
+            }""")
             
-            # CRITICAL: Wait for the .tracktace div to become visible
-            print("      -> Waiting for Track & Trace section to appear...")
-            await page.wait_for_selector("div.tracktace", state="visible", timeout=10000)
-            print("      -> Track & Trace section is now visible.")
+            if not found_tab:
+                print("   ⚠️ JS Click failed, trying Playwright text selector...")
+                await page.click("text=Track & Trace")
+            
+            # Wait for the input area to slide down
+            await page.wait_for_selector(".tracktace", state="visible", timeout=10000)
 
-            # 3. CLICK THE "Container No." RADIO LABEL
-            print("   -> 2. Selecting 'Container No.' radio button...")
-            container_label = page.locator("label[for='radio-id4']")
-            await container_label.wait_for(state="visible")
-            await container_label.click()
+            # 5. Select Radio Button
+            print("   -> Selecting Container Radio...")
+            await page.click("label[for='radio-id4']")
+            await asyncio.sleep(0.5)
 
-            # 4. INPUT THE NUMBER
-            print("   -> 3. Typing Container Number...")
+            # 6. Input Number
+            print("   -> Typing Number...")
             input_selector = "#selectTnt"
-            await page.wait_for_selector(input_selector, state="visible")
             await page.click(input_selector)
             await human_type(page, input_selector, container_number)
+            await asyncio.sleep(0.5)  # Small delay after typing
 
-            # 5. CLICK SEARCH (the one inside .tracktace section)
-            print("   -> 4. Clicking Search...")
-            search_button = page.locator("div.tracktace button.retreve")
-            await search_button.click()
-
-            # 6. WAIT FOR RESULTS
-            print("   -> 5. Waiting for results...")
-
-            # Wait for the results to load in the same window
+            # 7. Click Search
+            print("   -> Clicking Search...")
             try:
-                await page.wait_for_selector("text=Tracking Result", timeout=25000)
-                print("   -> Results loaded successfully.")
-                await asyncio.sleep(2)
-                content = await page.inner_text(".contents, #contents")
+                # Wait for button to be visible and clickable
+                await page.wait_for_selector("button.retreve", state="visible", timeout=5000)
+                # Try clicking the button first
+                await page.click("button.retreve")
+                print("   -> Button clicked successfully")
             except Exception as e:
-                print(f"   ⚠️ Result wait timed out: {e}. Grabbing body.")
+                print(f"   -> Button click failed: {e}, trying JavaScript function...")
+                # Fallback: Call the JavaScript function directly
+                try:
+                    await page.evaluate("gotoTrkNTrc()")
+                    print("   -> JavaScript function called successfully")
+                except Exception as js_error:
+                    print(f"   -> JavaScript function call failed: {js_error}")
+                    # Last resort: Try pressing Enter on the input
+                    await page.press(input_selector, "Enter")
+                    print("   -> Pressed Enter as fallback")
+
+            # 8. Wait for Results
+            print("   -> Waiting for results...")
+            try:
+                # HMM Results can take time. We wait for the specific "Tracking Result" header.
+                await page.wait_for_selector("text=Tracking Result", timeout=40000)
+                
+                # Expand specific sections if needed (HMM sometimes collapses them)
+                # But usually grabbing body is enough
+                await asyncio.sleep(2)
+                
+                # We grab the BODY to ensure we get the full timeline
+                # The AI needs the "Arrival" column in the "Vessel Movement" table
                 content = await page.inner_text("body")
+                
+                print(f"   ✅ Data Extracted ({len(content)} chars)")
+                
+                await browser.close()
+                return {
+                    "source": "HMM Official",
+                    "container": container_number,
+                    "raw_data": content
+                }
 
-            await browser.close()
-
-            return {
-                "source": "HMM Official",
-                "container": container_number,
-                "raw_data": content
-            }
+            except Exception as e:
+                print(f"   ⚠️ Result Timeout: {e}")
+                # Last ditch effort: grab whatever text is visible
+                content = await page.inner_text("body")
+                await browser.close()
+                return {
+                    "source": "HMM Partial",
+                    "container": container_number,
+                    "raw_data": content
+                }
 
         except Exception as e:
             print(f"   ❌ HMM Driver Crashed: {e}")
