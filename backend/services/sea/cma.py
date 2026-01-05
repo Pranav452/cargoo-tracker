@@ -23,7 +23,7 @@ async def drive_cma(container_number: str):
     print(f"[CMA] Official Site Tracking: {container_number}")
     
     async with async_playwright() as p:
-        # Launch in HEADFUL mode - critical for bypassing CMA's WAF
+        # Launch in HEADFUL mode for local interactive debugging
         browser = await p.chromium.launch(
             headless=False,
             args=STEALTH_ARGS

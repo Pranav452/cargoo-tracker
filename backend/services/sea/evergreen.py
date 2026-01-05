@@ -10,7 +10,8 @@ async def drive_evergreen(container_number: str):
     print(f"🚢 [Evergreen] Tracking via ShipmentLink: {container_number}")
     
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=STEALTH_ARGS)
+        # Use headful mode for local debugging
+        browser = await p.chromium.launch(headless=False, args=STEALTH_ARGS)
         context = await browser.new_context()
         page = await context.new_page()
 

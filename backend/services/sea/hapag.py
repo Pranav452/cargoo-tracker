@@ -10,6 +10,7 @@ async def drive_hapag(container_number: str):
     print(f"🚢 [Hapag] Official Site Tracking: {container_number}")
     
     async with async_playwright() as p:
+        # Use headful mode for easier local debugging
         browser = await p.chromium.launch(headless=False, args=STEALTH_ARGS)
         context = await browser.new_context()
         page = await context.new_page()
