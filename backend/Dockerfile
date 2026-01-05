@@ -1,23 +1,24 @@
-# Use the official Playwright Python image (Includes Python + Browsers)
 FROM mcr.microsoft.com/playwright/python:v1.40.0-jammy
 
-# Set working directory
 WORKDIR /app
 
-# Copy requirements first (for caching)
+# --- THIS SECTION IS MANDATORY ---
+RUN apt-get update && apt-get install -y xvfb
+# ---------------------------------
+
 COPY requirements.txt .
 
-# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Install Playwright browsers (Chromium only to save space)
 RUN playwright install chromium
 
-# Copy the rest of the backend code
 COPY . .
 
-# Expose the port
 EXPOSE 8000
 
-# Command to run the server
+# Add a startup script to start Xvfb as a background service
+RUN echo '#!/bin/bash\nXvfb :99 -screen 0 1920x1080x24 &\nexport DISPLAY=:99\nexec "$@"' > /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+
