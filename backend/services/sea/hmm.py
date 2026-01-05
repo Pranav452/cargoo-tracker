@@ -1,118 +1,107 @@
 import asyncio
+import re
 from playwright.async_api import async_playwright
-from services.utils import STEALTH_ARGS, human_type, kill_cookie_banners
+from services.utils import STEALTH_ARGS
 
 async def drive_hmm(container_number: str):
     """
-    Official HMM Driver (Server-Ready)
-    - Headless: TRUE (Required for EC2/Railway)
-    - Protocol: HTTP/1.1 Forced (Prevents blocking)
-    - Logic: JS-based clicking for reliability
+    Official HMM Driver - Network-Only Mode
+    Strategy: Block ALL resources (CSS/JS/IMG). Download HTML text only.
+    Extract Token via Regex. Fire API.
     """
-    print(f"🚢 [HMM] Official Site Tracking: {container_number}")
+    print(f"🚢 [HMM] Native API Tracking: {container_number}")
     
     async with async_playwright() as p:
-        # Add --disable-http2 to prevent ERR_HTTP2_PROTOCOL_ERROR on HMM site
-        custom_args = STEALTH_ARGS + ["--disable-http2"]
-        browser = await p.chromium.launch(headless=False, args=custom_args)
+        # USE "NEW" HEADLESS MODE (Harder to detect than standard headless)
+        # We append it to args instead of using the headless=True flag
+        custom_args = STEALTH_ARGS + [
+            "--headless=new", 
+            "--disable-http2", 
+            "--disable-gpu",
+            "--no-zygote"
+        ]
+        
+        # Note: We set headless=False in the function call, but pass --headless=new in args.
+        # This is a known trick to bypass detection.
+        browser = await p.chromium.launch(
+            headless=False,  
+            args=custom_args
+        )
+        
         context = await browser.new_context(ignore_https_errors=True)
+        
+        # --- CRITICAL: BLOCK EVERYTHING ---
+        # We abort loading anything that isn't the main HTML document.
+        # This prevents the "Timeout" because we don't load the heavy site.
+        await context.route("**/*", lambda route: route.continue_() 
+            if route.request.resource_type == "document" 
+            else route.abort()
+        )
+
         page = await context.new_page()
 
         try:
-            print("   -> Navigating to HMM...")
-            await page.goto("https://www.hmm21.com/company.do", timeout=90000, wait_until="domcontentloaded")
-            await asyncio.sleep(3) # Let assets load
-
-            # 3. Handle Cookies
-            await kill_cookie_banners(page)
-
-            # 4. Click 'Track & Trace' Tab (Using JS Injection)
-            # This is more reliable than selectors because layout shifts don't break it
-            print("   -> Switching to Track & Trace Tab...")
-            found_tab = await page.evaluate("""() => {
-                const tabs = Array.from(document.querySelectorAll('li, div, a, span'));
-                const target = tabs.find(el => el.textContent.trim() === 'Track & Trace');
-                if (target) {
-                    target.click();
-                    return true;
-                }
-                return false;
-            }""")
+            # 1. Get the HTML Source (Fast)
+            print("   -> Fetching HMM Source Code (No Rendering)...")
+            response = await page.goto("https://www.hmm21.com/e-service/general/trackNTrace/TrackNTrace.do", timeout=30000, wait_until="commit")
             
-            if not found_tab:
-                print("   ⚠️ JS Click failed, trying Playwright text selector...")
-                await page.click("text=Track & Trace")
+            # Wait a tiny bit for the response body to be available
+            await asyncio.sleep(2)
             
-            # Wait for the input area to slide down
-            await page.wait_for_selector(".tracktace", state="visible", timeout=10000)
+            # Get raw HTML text
+            html_content = await page.content()
+            
+            # 2. Extract Token using Regex (No Selectors)
+            # Looking for: <meta name="_csrf" content="UUID"/>
+            token = ""
+            match = re.search(r'name="_csrf"\s+content="([^"]+)"', html_content)
+            if match:
+                token = match.group(1)
+                # print(f"   -> Token found via Regex: {token[:10]}...")
+            else:
+                print("   ⚠️ Token not found in HTML. Trying without...")
 
-            # 5. Select Radio Button
-            print("   -> Selecting Container Radio...")
-            await page.click("label[for='radio-id4']")
-            await asyncio.sleep(0.5)
+            # 3. Construct API Request
+            api_url = "https://www.hmm21.com/e-service/general/trackNTrace/selectTrackNTrace.do"
+            
+            headers = {
+                "Content-Type": "application/json; charset=UTF-8",
+                "X-CSRF-TOKEN": token,
+                "X-Requested-With": "XMLHttpRequest"
+            }
 
-            # 6. Input Number
-            print("   -> Typing Number...")
-            input_selector = "#selectTnt"
-            await page.click(input_selector)
-            await human_type(page, input_selector, container_number)
-            await asyncio.sleep(0.5)  # Small delay after typing
+            payload = {
+                "type": "cntr",
+                "listBl": [],
+                "listCntr": [container_number],
+                "listBkg": [],
+                "listPo": []
+            }
 
-            # 7. Click Search
-            print("   -> Clicking Search...")
-            try:
-                # Wait for button to be visible and clickable
-                await page.wait_for_selector("button.retreve", state="visible", timeout=5000)
-                # Try clicking the button first
-                await page.click("button.retreve")
-                print("   -> Button clicked successfully")
-            except Exception as e:
-                print(f"   -> Button click failed: {e}, trying JavaScript function...")
-                # Fallback: Call the JavaScript function directly
-                try:
-                    await page.evaluate("gotoTrkNTrc()")
-                    print("   -> JavaScript function called successfully")
-                except Exception as js_error:
-                    print(f"   -> JavaScript function call failed: {js_error}")
-                    # Last resort: Try pressing Enter on the input
-                    await page.press(input_selector, "Enter")
-                    print("   -> Pressed Enter as fallback")
-
-            # 8. Wait for Results
-            print("   -> Waiting for results...")
-            try:
-                # HMM Results can take time. We wait for the specific "Tracking Result" header.
-                await page.wait_for_selector("text=Tracking Result", timeout=40000)
+            # 4. Send Request via Browser Context
+            print("   -> Sending API Request...")
+            api_response = await context.request.post(api_url, headers=headers, data=payload)
+            
+            if api_response.status == 200:
+                content = await api_response.text()
                 
-                # Expand specific sections if needed (HMM sometimes collapses them)
-                # But usually grabbing body is enough
-                await asyncio.sleep(2)
+                if "No Data" in content or len(content) < 200:
+                    print("   -> API returned success but empty data.")
                 
-                # We grab the BODY to ensure we get the full timeline
-                # The AI needs the "Arrival" column in the "Vessel Movement" table
-                content = await page.inner_text("body")
-                
-                print(f"   ✅ Data Extracted ({len(content)} chars)")
-                
+                print(f"   ✅ Success! Retrieved {len(content)} chars.")
                 await browser.close()
+                
                 return {
-                    "source": "HMM Official",
+                    "source": "HMM Official (Native API)",
                     "container": container_number,
                     "raw_data": content
                 }
-
-            except Exception as e:
-                print(f"   ⚠️ Result Timeout: {e}")
-                # Last ditch effort: grab whatever text is visible
-                content = await page.inner_text("body")
+            else:
+                print(f"   ❌ API Failed: {api_response.status}")
                 await browser.close()
-                return {
-                    "source": "HMM Partial",
-                    "container": container_number,
-                    "raw_data": content
-                }
+                return None
 
         except Exception as e:
-            print(f"   ❌ HMM Driver Crashed: {e}")
+            print(f"   ❌ HMM Driver Failed: {e}")
             await browser.close()
             return None
