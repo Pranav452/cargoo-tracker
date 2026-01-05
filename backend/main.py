@@ -73,7 +73,12 @@ async def track_sea(request: TrackRequest):
     
     # 3. AI Analysis
     if scrape_data and scrape_data.get("raw_data"):
-        print("   🧠 Sending raw text to AI for analysis...")
+        raw_len = len(scrape_data["raw_data"])
+        print(f"   🧠 Sending {raw_len} chars to AI...")
+        
+        # DEBUG: Print the start of the data to see if it's an error message
+        print(f"   📄 RAW DATA START: {scrape_data['raw_data'][:500]}...")
+
         ai_result = await parse_tracking_data(scrape_data["raw_data"], request.carrier)
         
         return {
@@ -82,7 +87,7 @@ async def track_sea(request: TrackRequest):
             "status": ai_result.get("status"),
             "live_eta": ai_result.get("latest_date"),
             "smart_summary": ai_result.get("summary"),
-            "raw_data_snippet": "Source: Official Driver"
+            "raw_data_snippet": scrape_data["raw_data"][:200]
         }
 
     return {
