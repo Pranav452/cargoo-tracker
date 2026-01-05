@@ -25,7 +25,7 @@ async def drive_cma(container_number: str):
     async with async_playwright() as p:
         # Launch in HEADFUL mode - critical for bypassing CMA's WAF
         browser = await p.chromium.launch(
-            headless=True,
+            headless=False,
             args=STEALTH_ARGS
         )
         
