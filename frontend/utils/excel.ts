@@ -100,3 +100,43 @@ export const exportData = (data: any[], format: 'xlsx' | 'csv') => {
     saveAs(blob, `${fileName}.csv`);
   }
 };
+
+// --- PASTED TABLE PARSER ---
+// Accepts text copied from Excel/Sheets (tab- or comma-separated)
+// Returns an array of row objects keyed by header names
+export const parsePastedTable = (text: string): any[] => {
+  if (!text.trim()) return [];
+
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length === 0) return [];
+
+  // Detect separator: prefer tab, fallback to comma
+  const detectSeparator = (sample: string) => {
+    if (sample.includes('\t')) return '\t';
+    if (sample.includes(',')) return ',';
+    return '\t';
+  };
+
+  const separator = detectSeparator(lines[0]);
+
+  const headers = lines[0].split(separator).map((h) => h.trim());
+
+  const rows: any[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(separator);
+    if (parts.every((p) => !p.trim())) continue;
+
+    const row: any = {};
+    headers.forEach((header, idx) => {
+      row[header] = (parts[idx] ?? '').trim();
+    });
+    rows.push(row);
+  }
+
+  return rows;
+};
