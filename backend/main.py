@@ -30,6 +30,14 @@ class TrackRequest(BaseModel):
     carrier: str = "Unknown"
     system_eta: str = "N/A"
 
+
+@app.get("/health")
+async def health_check():
+    """
+    Lightweight health endpoint for frontend connectivity status.
+    """
+    return {"status": "ok", "version": "v2.0"}
+
 @app.post("/api/track/sea")
 async def track_sea(request: TrackRequest):
     # ---------------------------------------------------------

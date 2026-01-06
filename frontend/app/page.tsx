@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { parseExcel, normalizeKeys, exportData, parsePastedTable } from "@/utils/excel";
 import {
   UploadCloud, Play, FileSpreadsheet, FileText,
@@ -21,6 +21,8 @@ interface Shipment {
   type?: string;
   raw?: any;
 }
+
+type ConnectionStatus = "connecting" | "connected" | "disconnected";
 
 const mapRowsToShipments = (data: any[]): Shipment[] => {
   return data
@@ -75,6 +77,63 @@ export default function Dashboard() {
   const [progress, setProgress] = useState(0);
   const [inputMode, setInputMode] = useState<"file" | "paste">("file");
   const [pasteText, setPasteText] = useState("");
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
+
+  // --- BACKEND HEALTH CHECK ---
+  useEffect(() => {
+    let isMounted = true;
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+    const checkHealth = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/health`, { method: "GET" });
+        if (!isMounted) return;
+        if (res.ok) {
+          setConnectionStatus("connected");
+        } else {
+          setConnectionStatus("disconnected");
+        }
+      } catch {
+        if (isMounted) {
+          setConnectionStatus("disconnected");
+        }
+      }
+    };
+
+    // Initial check
+    checkHealth();
+
+    // Poll every 10 seconds
+    const interval = setInterval(checkHealth, 10000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const renderConnectionBadge = () => {
+    let colorClasses = "bg-yellow-100 text-yellow-800 border-yellow-200";
+    let dotClasses = "bg-yellow-400";
+    let label = "Connecting";
+
+    if (connectionStatus === "connected") {
+      colorClasses = "bg-green-100 text-green-800 border-green-200";
+      dotClasses = "bg-green-500";
+      label = "Connected";
+    } else if (connectionStatus === "disconnected") {
+      colorClasses = "bg-red-100 text-red-800 border-red-200";
+      dotClasses = "bg-red-500";
+      label = "Not Connected";
+    }
+
+    return (
+      <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-medium ${colorClasses}`}>
+        <span className={`h-2 w-2 rounded-full ${dotClasses}`} />
+        <span>Backend: {label}</span>
+      </div>
+    );
+  };
 
   // --- 1. UPLOAD & PARSE ---
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -203,12 +262,23 @@ export default function Dashboard() {
       <div className="max-w-7xl mx-auto">
 
         {/* --- HEADER --- */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-bold text-slate-900">Sea Freight Tracker <span className="text-blue-600">v2.0</span></h1>
-            <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded border border-blue-200">BETA</span>
+        <div className="mb-8 flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-2">
+              <h1 className="text-3xl font-bold text-slate-900">
+                Sea Freight Tracker <span className="text-blue-600">v2.0</span>
+              </h1>
+              <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded border border-blue-200">
+                BETA
+              </span>
+            </div>
+            <p className="text-slate-500">
+              Upload your sea shipment manifest to sync live ETAs and CO2 data.
+            </p>
           </div>
-          <p className="text-slate-500">Upload your sea shipment manifest to sync live ETAs and CO2 data.</p>
+          <div className="mt-1">
+            {renderConnectionBadge()}
+          </div>
         </div>
 
         {/* --- INFO CARD --- */}
