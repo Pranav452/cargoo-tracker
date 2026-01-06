@@ -1,62 +1,29 @@
-from services.browser_manager import browser_manager
-from services.utils import human_type
+from services.hmm_session import hmm_session
 
-async def drive_hmm_persistent(container_number: str):
+async def drive_hmm(container_number: str):
     """
-    HMM Driver using the Global Persistent Browser.
+    Official HMM Driver - Persistent Mode
+    Uses the globally open browser session.
     """
-    print(f"🚢 [HMM] Persistent Tracking: {container_number}")
-    
-    # Get the open page
-    page = await browser_manager.get_page()
-    
-    # Ensure we have a token (refresh if needed)
-    if not browser_manager.hmm_token:
-        await browser_manager.refresh_hmm_session()
-
-    token = browser_manager.hmm_token
-    if not token:
-        return None
-
-    # Use the Page Context to fire the API request
-    api_url = "/e-service/general/trackNTrace/selectTrackNTrace.do"
-    
-    js_code = """
-        async ({ url, token, container }) => {
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json; charset=UTF-8',
-                        'X-CSRF-TOKEN': token,
-                        'X-Requested-With': 'XMLHttpRequest'
-                    },
-                    body: JSON.stringify({
-                        "type": "cntr",
-                        "listBl": [],
-                        "listCntr": [container],
-                        "listBkg": [],
-                        "listPo": []
-                    })
-                });
-                return await response.text();
-            } catch (err) {
-                return "JS_ERROR: " + err.toString();
-            }
-        }
-    """
-    
-    content = await page.evaluate(js_code, {
-        "url": api_url,
-        "token": token,
-        "container": container_number
-    })
-    
-    if "JS_ERROR" in content or "No Data" in content:
-        return None
+    try:
+        # Ensure session is running
+        await hmm_session.start()
         
-    return {
-        "source": "HMM Official (Persistent)",
-        "container": container_number,
-        "raw_data": content
-    }
+        # Fetch data using existing token
+        content = await hmm_session.fetch_data(container_number)
+        
+        if not content or "JS_ERROR" in content or "No Data" in content:
+            # Maybe token expired? Try one refresh
+            print("   ⚠️ Fetch failed. Refreshing session...")
+            await hmm_session.refresh_hmm_session() # Or restart
+            content = await hmm_session.fetch_data(container_number)
+
+        return {
+            "source": "HMM Official (Persistent)",
+            "container": container_number,
+            "raw_data": content
+        }
+
+    except Exception as e:
+        print(f"   ❌ HMM Driver Failed: {e}")
+        return None

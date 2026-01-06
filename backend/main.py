@@ -10,8 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 # --- SERVICES ---
-# We use the Browser Manager to keep one browser open
-from services.browser_manager import browser_manager 
+from services.hmm_session import hmm_session 
 
 from services.cargoes_flow import get_sea_shipment
 from services.ai_service import parse_tracking_data
@@ -36,13 +35,13 @@ app.add_middleware(
 # --- LIFECYCLE EVENTS (Keep Browser Open) ---
 @app.on_event("startup")
 async def startup_event():
-    print("🌟 Server Starting... Opening Persistent Browser...")
-    await browser_manager.initialize()
+    print("🌟 Server Starting... Warming up HMM Browser...")
+    await hmm_session.start()
 
 @app.on_event("shutdown")
 async def shutdown_event():
     print("💤 Server Stopping... Closing Browser...")
-    await browser_manager.close()
+    await hmm_session.close()
 
 class TrackRequest(BaseModel):
     number: str
