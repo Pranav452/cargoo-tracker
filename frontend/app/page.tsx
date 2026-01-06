@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { parseExcel, normalizeKeys, exportData } from "@/utils/excel";
+import { parseExcel, normalizeKeys, exportData, parsePastedTable } from "@/utils/excel";
 import {
   UploadCloud, Play, FileSpreadsheet, FileText,
   Loader2, CheckCircle, AlertCircle, Info, Trash2
@@ -22,31 +22,22 @@ interface Shipment {
   raw?: any;
 }
 
-export default function Dashboard() {
-  const [shipments, setShipments] = useState<Shipment[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
-
-  // --- 1. UPLOAD & PARSE ---
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files?.[0]) return;
-    const data = await parseExcel(e.target.files[0]);
-
-    // Map Excel rows to our App Structure
-    const mapped = data.map((row: any, index: number) => {
+const mapRowsToShipments = (data: any[]): Shipment[] => {
+  return data
+    .map((row: any, index: number) => {
       const norm = normalizeKeys(row);
 
       // --- CLEAN CARRIER NAMES ---
       let carrier = String(norm.carrier || "Unknown").toUpperCase();
 
-      if (carrier.includes('HAPAG')) carrier = 'HAPAG-LLOYD';
-      else if (carrier.includes('CMA')) carrier = 'CMA CGM';
-      else if (carrier.includes('ONE')) carrier = 'ONE';
-      else if (carrier.includes('MSC')) carrier = 'MSC';
-      else if (carrier.includes('HYUNDAI') || carrier.includes('HMM')) carrier = 'HMM';
-      else if (carrier.includes('MAERSK')) carrier = 'MAERSK';
-      else if (carrier.includes('COSCO')) carrier = 'COSCO';
-      else if (carrier.includes('EVERGREEN')) carrier = 'EVERGREEN';
+      if (carrier.includes("HAPAG")) carrier = "HAPAG-LLOYD";
+      else if (carrier.includes("CMA")) carrier = "CMA CGM";
+      else if (carrier.includes("ONE")) carrier = "ONE";
+      else if (carrier.includes("MSC")) carrier = "MSC";
+      else if (carrier.includes("HYUNDAI") || carrier.includes("HMM")) carrier = "HMM";
+      else if (carrier.includes("MAERSK")) carrier = "MAERSK";
+      else if (carrier.includes("COSCO")) carrier = "COSCO";
+      else if (carrier.includes("EVERGREEN")) carrier = "EVERGREEN";
 
       // --- CLEAN CONTAINER NUMBER ---
       // Remove spaces or invisible characters
@@ -55,7 +46,9 @@ export default function Dashboard() {
       // Guess type based on number format
       // Air = 3 digits - 8 digits (e.g., 098-12345678)
       // Sea = 4 letters + 7 numbers (e.g., MSCU1234567)
-      const isAir = rawTracking.includes("-") || (rawTracking.length === 11 && !isNaN(Number(rawTracking)));
+      const isAir =
+        rawTracking.includes("-") ||
+        (rawTracking.length === 11 && !isNaN(Number(rawTracking)));
 
       return {
         id: index,
@@ -65,12 +58,37 @@ export default function Dashboard() {
         type: isAir ? "air" : "sea",
         loading: false,
         selected: true,
-        raw: row
+        raw: row,
       } as Shipment;
     })
-    // FILTER: Only keep rows that actually have a Container/AWB Number
-    .filter(s => s.trackingNumber && s.trackingNumber.length > 5 && s.trackingNumber !== "UNKNOWN");
+    .filter(
+      (s) =>
+        s.trackingNumber &&
+        s.trackingNumber.length > 5 &&
+        s.trackingNumber !== "UNKNOWN"
+    );
+};
 
+export default function Dashboard() {
+  const [shipments, setShipments] = useState<Shipment[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [inputMode, setInputMode] = useState<"file" | "paste">("file");
+  const [pasteText, setPasteText] = useState("");
+
+  // --- 1. UPLOAD & PARSE ---
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files?.[0]) return;
+    const data = await parseExcel(e.target.files[0]);
+
+    const mapped = mapRowsToShipments(data);
+    setShipments(mapped);
+  };
+
+  const handlePasteSubmit = () => {
+    if (!pasteText.trim()) return;
+    const rows = parsePastedTable(pasteText);
+    const mapped = mapRowsToShipments(rows);
     setShipments(mapped);
   };
 
@@ -209,17 +227,83 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* --- UPLOAD ZONE --- */}
+        {/* --- INPUT ZONE: FILE UPLOAD OR PASTE --- */}
         {shipments.length === 0 && (
-          <div className="border-2 border-dashed border-slate-300 rounded-2xl p-16 text-center bg-white hover:bg-slate-50 transition cursor-pointer relative group">
-            <input type="file" accept=".xlsx,.csv" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-            <div className="flex flex-col items-center group-hover:scale-105 transition-transform duration-200">
-              <div className="bg-slate-100 p-4 rounded-full mb-4 group-hover:bg-blue-100">
-                <UploadCloud className="text-slate-400 group-hover:text-blue-600" size={40} />
-              </div>
-              <h3 className="text-xl font-semibold text-slate-900">Drag & Drop your Excel file here</h3>
-              <p className="text-slate-500 mt-2">Supports .xlsx and .csv files</p>
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-8">
+            <div className="flex mb-4 border-b border-slate-200">
+              <button
+                className={`px-4 py-2 text-sm font-medium border-b-2 ${
+                  inputMode === "file"
+                    ? "border-blue-600 text-blue-700"
+                    : "border-transparent text-slate-500"
+                }`}
+                onClick={() => setInputMode("file")}
+              >
+                Upload Excel / CSV
+              </button>
+              <button
+                className={`ml-4 px-4 py-2 text-sm font-medium border-b-2 ${
+                  inputMode === "paste"
+                    ? "border-blue-600 text-blue-700"
+                    : "border-transparent text-slate-500"
+                }`}
+                onClick={() => setInputMode("paste")}
+              >
+                Paste Table Data
+              </button>
             </div>
+
+            {inputMode === "file" && (
+              <div className="border-2 border-dashed border-slate-300 rounded-2xl p-10 text-center bg-slate-50 hover:bg-slate-100 transition cursor-pointer relative group">
+                <input
+                  type="file"
+                  accept=".xlsx,.csv"
+                  onChange={handleFileUpload}
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                />
+                <div className="flex flex-col items-center group-hover:scale-105 transition-transform duration-200">
+                  <div className="bg-slate-100 p-4 rounded-full mb-4 group-hover:bg-blue-100">
+                    <UploadCloud
+                      className="text-slate-400 group-hover:text-blue-600"
+                      size={40}
+                    />
+                  </div>
+                  <h3 className="text-xl font-semibold text-slate-900">
+                    Drag & Drop your Excel file here
+                  </h3>
+                  <p className="text-slate-500 mt-2">
+                    Supports .xlsx and .csv files
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {inputMode === "paste" && (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600">
+                  Paste rows directly from Excel/Google Sheets. Make sure the
+                  first row contains headers like{" "}
+                  <span className="font-mono">Container No</span>,{" "}
+                  <span className="font-mono">Carrier</span>, and{" "}
+                  <span className="font-mono">ETA</span>.
+                </p>
+                <textarea
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  rows={8}
+                  className="w-full border border-slate-300 rounded-lg p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder={"Container No\tCarrier\tETA\nMSCU1234567\tMSC\t01/01/2026"}
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={handlePasteSubmit}
+                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition"
+                  >
+                    Use Pasted Data
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
