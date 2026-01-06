@@ -5,101 +5,121 @@ from services.utils import STEALTH_ARGS
 
 async def drive_hmm(container_number: str):
     """
-    Official HMM Driver - Network-Only Mode
-    Strategy: Block ALL resources (CSS/JS/IMG). Download HTML text only.
-    Extract Token via Regex. Fire API.
+    Official HMM Driver - DOM Fetch Strategy
+    Executes the API call INSIDE the browser context using JavaScript.
+    This bypasses UI clicking issues AND Firewall/TLS fingerprinting.
     """
-    print(f"🚢 [HMM] Native API Tracking: {container_number}")
+    print(f"🚢 [HMM] Native API Tracking (DOM Fetch): {container_number}")
     
     async with async_playwright() as p:
-        # USE "NEW" HEADLESS MODE (Harder to detect than standard headless)
-        # We append it to args instead of using the headless=True flag
+        # Keep headless=False so it looks like a real user (God Mode)
         custom_args = STEALTH_ARGS + [
-            "--headless=new", 
             "--disable-http2", 
-            "--disable-gpu",
-            "--no-zygote"
+            "--no-zygote",
+            "--window-size=1920,1080"
         ]
         
-        # Note: We set headless=False in the function call, but pass --headless=new in args.
-        # This is a known trick to bypass detection.
         browser = await p.chromium.launch(
             headless=False,  
             args=custom_args
         )
         
-        context = await browser.new_context(ignore_https_errors=True)
-        
-        # --- CRITICAL: BLOCK EVERYTHING ---
-        # We abort loading anything that isn't the main HTML document.
-        # This prevents the "Timeout" because we don't load the heavy site.
-        await context.route("**/*", lambda route: route.continue_() 
-            if route.request.resource_type == "document" 
-            else route.abort()
+        context = await browser.new_context(
+            ignore_https_errors=True,
+            viewport={'width': 1920, 'height': 1080},
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
+        
+        # Hide automation flags
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        """)
 
         page = await context.new_page()
 
         try:
-            # 1. Get the HTML Source (Fast)
-            print("   -> Fetching HMM Source Code (No Rendering)...")
-            response = await page.goto("https://www.hmm21.com/e-service/general/trackNTrace/TrackNTrace.do", timeout=30000, wait_until="commit")
+            # 1. Load Page to establish session & get Cookies
+            print("   -> Fetching HMM Session...")
+            await page.goto("https://www.hmm21.com/e-service/general/trackNTrace/TrackNTrace.do", timeout=60000, wait_until="domcontentloaded")
             
-            # Wait a tiny bit for the response body to be available
-            await asyncio.sleep(2)
-            
-            # Get raw HTML text
-            html_content = await page.content()
-            
-            # 2. Extract Token using Regex (No Selectors)
-            # Looking for: <meta name="_csrf" content="UUID"/>
-            token = ""
-            match = re.search(r'name="_csrf"\s+content="([^"]+)"', html_content)
-            if match:
-                token = match.group(1)
-                # print(f"   -> Token found via Regex: {token[:10]}...")
-            else:
-                print("   ⚠️ Token not found in HTML. Trying without...")
+            # Wait for CSRF token to be present in DOM
+            try:
+                await page.wait_for_selector("meta[name='_csrf']", state="attached", timeout=15000)
+            except:
+                pass
 
-            # 3. Construct API Request
-            api_url = "https://www.hmm21.com/e-service/general/trackNTrace/selectTrackNTrace.do"
+            # 2. Get Token
+            token = await page.locator("meta[name='_csrf']").get_attribute("content")
             
-            headers = {
-                "Content-Type": "application/json; charset=UTF-8",
-                "X-CSRF-TOKEN": token,
-                "X-Requested-With": "XMLHttpRequest"
-            }
-
-            payload = {
-                "type": "cntr",
-                "listBl": [],
-                "listCntr": [container_number],
-                "listBkg": [],
-                "listPo": []
-            }
-
-            # 4. Send Request via Browser Context
-            print("   -> Sending API Request...")
-            api_response = await context.request.post(api_url, headers=headers, data=payload)
+            # Fallback to HTML regex if DOM fails
+            if not token:
+                print("   ⚠️ Token not found in DOM. Checking HTML source...")
+                content = await page.content()
+                match = re.search(r'name="_csrf"\s+content="([^"]+)"', content)
+                if match: token = match.group(1)
             
-            if api_response.status == 200:
-                content = await api_response.text()
-                
-                if "No Data" in content or len(content) < 200:
-                    print("   -> API returned success but empty data.")
-                
-                print(f"   ✅ Success! Retrieved {len(content)} chars.")
-                await browser.close()
-                
-                return {
-                    "source": "HMM Official (Native API)",
-                    "container": container_number,
-                    "raw_data": content
-                }
-            else:
-                print(f"   ❌ API Failed: {api_response.status}")
+            if not token:
+                print("   ❌ Fatal: Could not find CSRF Token.")
                 await browser.close()
                 return None
+
+            # 3. INJECT JAVASCRIPT FETCH
+            # This runs inside the browser page, sharing all cookies and fingerprint
+            print(f"   -> Executing Browser Fetch with Token: {token[:10]}...")
+            
+            api_url = "/e-service/general/trackNTrace/selectTrackNTrace.do"
+            
+            # We define the payload and headers in Python, then pass to JS
+            js_code = """
+                async ({ url, token, container }) => {
+                    try {
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json; charset=UTF-8',
+                                'X-CSRF-TOKEN': token,
+                                'X-Requested-With': 'XMLHttpRequest'
+                            },
+                            body: JSON.stringify({
+                                "type": "cntr",
+                                "listBl": [],
+                                "listCntr": [container],
+                                "listBkg": [],
+                                "listPo": []
+                            })
+                        });
+                        return await response.text();
+                    } catch (err) {
+                        return "JS_ERROR: " + err.toString();
+                    }
+                }
+            """
+            
+            # Execute the JS
+            content = await page.evaluate(js_code, {
+                "url": api_url,
+                "token": token,
+                "container": container_number
+            })
+            
+            # Check response
+            if "JS_ERROR" in content:
+                print(f"   ❌ Browser Fetch Error: {content}")
+                await browser.close()
+                return None
+            
+            if "No Data" in content or len(content) < 200:
+                 print("   -> API returned empty/short data.")
+            else:
+                 print(f"   ✅ Success! Retrieved {len(content)} chars via JS.")
+
+            await browser.close()
+            
+            return {
+                "source": "HMM Official (JS Fetch)",
+                "container": container_number,
+                "raw_data": content
+            }
 
         except Exception as e:
             print(f"   ❌ HMM Driver Failed: {e}")
