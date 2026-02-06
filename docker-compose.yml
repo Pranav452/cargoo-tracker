@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  # Backend Service - FastAPI + Playwright
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cargoo-tracker-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # Add your environment variables here
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      # Optional: Mount for development hot-reload
+      # - ./backend:/app
+      # Mount for accessing debug screenshots/logs
+      - backend-tmp:/tmp
+    restart: unless-stopped
+    networks:
+      - cargoo-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Service - Next.js
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cargoo-tracker-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # Point to backend service (use service name for internal Docker network)
+      - NEXT_PUBLIC_API_URL=http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - cargoo-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  cargoo-network:
+    driver: bridge
+
+volumes:
+  backend-tmp:
+    driver: local
