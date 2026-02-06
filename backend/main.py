@@ -91,12 +91,23 @@ async def track_sea(request: TrackRequest):
             "raw_data_snippet": "Source: Cargoes Flow API"
         }
 
+    # CMA fallback: if Cargoes Flow has no data, skip browser driver
+    carrier_name = request.carrier.lower()
+    if "cma" in carrier_name:
+        print("   ⚠️ CMA not in Cargoes Flow. Skipping driver; manual check required.")
+        return {
+            "source": "System",
+            "status": "Manual Check Required",
+            "co2": "N/A",
+            "eta_changed": False,
+            "message": "CMA CGM container not found in Cargoes Flow API. Please check manually at: https://www.cma-cgm.com/ebusiness/tracking"
+        }
+
     # ---------------------------------------------------------
     # TIER 2: OFFICIAL DRIVERS (The Custom Scripts)
     # ---------------------------------------------------------
     print("   🐢 API didn't have data. Switching to Official Driver...")
 
-    carrier_name = request.carrier.lower()
     scrape_data = None
 
     # Routing Logic
